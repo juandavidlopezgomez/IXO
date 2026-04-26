@@ -26,37 +26,19 @@ def _now_context() -> str:
 
 
 def _build_system_prompt_general() -> str:
-    return f"""Eres un analista experto en apuestas deportivas con 20+ años de experiencia. \
-Tu misión: identificar las MEJORES apuestas del día con cuotas entre 1.40 y 1.70.
+    return f"""Eres analista experto en apuestas deportivas. Encuentra las MEJORES apuestas con cuotas 1.40-1.70.
 
 {_now_context()}
 
-═══════ PROCESO OBLIGATORIO ═══════
-PASO 1: Llama get_events_in_odds_range(sport="all", hours_ahead=36) para ver candidatos.
-PASO 2: Para los partidos de FÚTBOL más prometedores (top 5-8), llama get_team_statistics \
-en AMBOS equipos para conocer su forma reciente.
-PASO 3: Para los 3 mejores candidatos, llama get_head_to_head para confirmar tendencia.
-PASO 4: Opcional: llama get_live_matches por si hay partidos en curso interesantes.
-PASO 5: Responde con el JSON final.
+PROCESO:
+1. Llama get_events_in_odds_range(sport="all", hours_ahead=36)
+2. Para los mejores partidos de fútbol (máx 3), llama get_team_statistics en ambos equipos
+3. Para los 2 mejores, llama get_head_to_head
+4. Responde con JSON final
 
-═══════ METODOLOGÍA DE ANÁLISIS (puntuación 0-100) ═══════
-• Forma últimos 5 partidos del equipo seleccionado: hasta 40 puntos
-   - 5V=40, 4V=32, 3V+1E=28, 3V=24, 2V+2E=20, 2V=16, 1V=8
-• Diferencia de goles (marcados − encajados, promedio): hasta 25 puntos
-   - >+1.5 = 25, +1 a +1.5 = 20, +0.5 a +1 = 15, 0 a +0.5 = 10
-• Historial H2H favorable (>50% victorias): hasta 20 puntos
-   - >70% = 20, 60-70% = 15, 50-60% = 10
-• Condición local (si juega en casa con buen %): hasta 15 puntos
-   - >70% local = 15, 50-70% = 10
-Para deportes NO-fútbol (NBA, NFL, etc.) usa solo análisis de cuotas y ráfagas \
-de bookmakers (consenso entre múltiples casas = más confianza).
-
-═══════ CRITERIO ESTRICTO DE RECOMENDACIÓN ═══════
-• prob_estimada = puntuación_total / 100 (en %)
-• prob_implícita = (1 / cuota) × 100
-• RECOMIENDA solo si: prob_estimada ≥ prob_implícita + 5%
-• Ejemplo: cuota 1.55 → prob implícita 64.5% → solo si tu análisis ≥ 69.5%
-• Sé HONESTO: mejor 0 recomendaciones que apuestas dudosas.
+PUNTUACIÓN (0-100): Forma reciente 5 partidos=40pts, diferencia goles=25pts, H2H=20pts, local=15pts
+RECOMENDAR solo si: prob_estimada >= (1/cuota×100) + 5%
+Sé honesto: 0 recomendaciones es mejor que recomendar algo dudoso.
 
 ═══════ RESPUESTA FINAL (OBLIGATORIO JSON) ═══════
 Termina SIEMPRE con este bloque (sin texto después del cierre):
@@ -142,6 +124,16 @@ Si no encuentras el partido, devuelve {{"error": "Partido no encontrado: ..."}}.
 _team_stats_cache: dict = {}
 _h2h_cache: dict = {}
 
+MAX_TOOL_CHARS = 3000  # límite de caracteres por respuesta de herramienta
+
+
+def _truncate(result: dict) -> str:
+    """Convierte resultado a JSON y lo trunca si es muy largo."""
+    text = json.dumps(result, ensure_ascii=False)
+    if len(text) > MAX_TOOL_CHARS:
+        text = text[:MAX_TOOL_CHARS] + '..."}'
+    return text
+
 
 def _process_tool(name: str, tool_input: dict) -> str:
     odds_key = os.environ["ODDS_API_KEY"]
@@ -177,7 +169,7 @@ def _process_tool(name: str, tool_input: dict) -> str:
     else:
         result = {"error": f"Herramienta desconocida: {name}"}
 
-    return json.dumps(result, ensure_ascii=False)
+    return _truncate(result)
 
 
 def _extract_json(text: str) -> dict | None:

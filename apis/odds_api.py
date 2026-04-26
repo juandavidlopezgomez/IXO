@@ -115,19 +115,12 @@ def _extract_outcomes_in_range(
                     seleccion = f"{seleccion} {point}"
 
                 results.append({
-                    "event_id": event["id"],
                     "deporte": event.get("sport_title", event.get("sport_key", "")),
-                    "deporte_key": event.get("sport_key", ""),
-                    "equipo_local": event["home_team"],
-                    "equipo_visitante": event["away_team"],
                     "partido": f"{event['home_team']} vs {event['away_team']}",
                     "cuando": time_info["cuando"],
                     "comienza_en": time_info["comienza_en"],
-                    "hora_local": time_info["hora_local"],
                     "minutos_hasta_inicio": time_info["minutos_hasta_inicio"],
-                    "casa_apuestas": bookmaker["title"],
                     "mercado": MARKET_NAMES.get(market_key, market_key),
-                    "mercado_key": market_key,
                     "seleccion": seleccion,
                     "cuota": price,
                     "prob_implicita": round(1 / price * 100, 1),
@@ -143,7 +136,7 @@ def get_events_in_range(
     max_odds: float = 1.70,
     hours_ahead: int = 36,
     only_future: bool = True,
-    max_results: int = 60,
+    max_results: int = 20,
 ) -> dict:
     """Obtiene apuestas en rango de cuotas. SOLO eventos futuros por defecto."""
     now_utc = datetime.now(timezone.utc)
@@ -157,7 +150,7 @@ def get_events_in_range(
             active_keys = [s["key"] for s in all_sports]
             sports_to_check = [s for s in TOP_SPORTS if s in active_keys]
             extras = [s for s in active_keys if s not in TOP_SPORTS]
-            sports_to_check.extend(extras[:8])
+            sports_to_check.extend(extras[:3])
         except Exception:
             sports_to_check = TOP_SPORTS
 
