@@ -16,7 +16,7 @@ load_dotenv()
 
 
 def _check_env():
-    required = ["ANTHROPIC_API_KEY", "ODDS_API_KEY", "API_SPORTS_KEY", "RAPIDAPI_KEY"]
+    required = ["GROQ_API_KEY", "ODDS_API_KEY", "API_SPORTS_KEY", "RAPIDAPI_KEY"]
     missing = [k for k in required if not os.environ.get(k)]
     if missing:
         console.print(
