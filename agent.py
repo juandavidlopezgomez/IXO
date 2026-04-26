@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 
 from groq import Groq
 
-from apis.odds_api import get_events_in_range, find_match
+from apis.rundown_api import get_events_in_range, find_match
 from apis.api_sports import get_team_stats, get_h2h_stats
 from apis.totalfootball import get_live_matches as fetch_live
 from tools import TOOLS
@@ -130,20 +130,19 @@ def _truncate(result: dict) -> str:
 
 
 def _process_tool(name: str, tool_input: dict) -> str:
-    odds_key = os.environ["ODDS_API_KEY"]
-    sports_key = os.environ["API_SPORTS_KEY"]
     rapid_key = os.environ["RAPIDAPI_KEY"]
+    sports_key = os.environ["API_SPORTS_KEY"]
 
     if name == "get_events_in_odds_range":
         result = get_events_in_range(
-            odds_key,
+            rapid_key,
             sport=tool_input.get("sport", "all"),
             min_odds=tool_input.get("min_odds", 1.40),
             max_odds=tool_input.get("max_odds", 1.70),
             hours_ahead=tool_input.get("hours_ahead", 36),
         )
     elif name == "find_specific_match":
-        result = find_match(odds_key, tool_input["query"])
+        result = find_match(rapid_key, tool_input["query"])
     elif name == "get_team_statistics":
         team_name = tool_input["team_name"]
         if team_name in _team_stats_cache:
@@ -432,8 +431,8 @@ def run_general(n: int = 10) -> dict:
     _team_stats_cache.clear()
     _h2h_cache.clear()
 
-    odds_key = os.environ["ODDS_API_KEY"]
-    return _select_top_bets(odds_key, n=n, max_per_sport=3)
+    rapid_key = os.environ["RAPIDAPI_KEY"]
+    return _select_top_bets(rapid_key, n=n, max_per_sport=3)
 
 
 def run_match(query: str) -> dict:

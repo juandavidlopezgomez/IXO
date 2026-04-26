@@ -19,7 +19,7 @@ load_dotenv()
 
 
 def _check_env():
-    required = ["GROQ_API_KEY", "ODDS_API_KEY", "API_SPORTS_KEY", "RAPIDAPI_KEY"]
+    required = ["GROQ_API_KEY", "API_SPORTS_KEY", "RAPIDAPI_KEY"]
     missing = [k for k in required if not os.environ.get(k)]
     if missing:
         console.print(
@@ -108,59 +108,48 @@ def _run_general_mode(top: int = 10):
 def _run_diagnose():
     """Diagnostica el estado de las APIs."""
     import requests
-    from apis.odds_api import BASE_URL, get_sports_list, get_events_in_range
+    from apis.rundown_api import BASE_URL, RAPIDAPI_HOST, get_events_in_range, SPORT_IDS
 
-    odds_key = os.environ["ODDS_API_KEY"]
+    rapid_key = os.environ["RAPIDAPI_KEY"]
     console.print("[bold cyan]━━━ DIAGNÓSTICO DE APIs ━━━[/bold cyan]\n")
 
-    # 1. The Odds API
-    console.print("[bold]1. The Odds API[/bold]")
+    # 1. The Rundown API (cuotas)
+    console.print("[bold]1. The Rundown API (cuotas — RapidAPI)[/bold]")
     try:
-        resp = requests.get(f"{BASE_URL}/sports", params={"apiKey": odds_key}, timeout=15)
+        resp = requests.get(
+            f"{BASE_URL}/sports",
+            headers={"x-rapidapi-host": RAPIDAPI_HOST, "x-rapidapi-key": rapid_key},
+            timeout=15,
+        )
         console.print(f"   Status: {resp.status_code}")
-        console.print(f"   Quota usada: {resp.headers.get('x-requests-used', '?')}")
-        console.print(f"   Quota restante: {resp.headers.get('x-requests-remaining', '?')}")
         if resp.status_code == 200:
-            sports = [s for s in resp.json() if s.get("active")]
-            console.print(f"   Deportes activos: {len(sports)}")
+            sports = resp.json().get("sports", [])
+            console.print(f"   Deportes disponibles: {len(sports)}")
             console.print(f"   [green]✅ API funcionando correctamente[/green]")
-        elif resp.status_code == 403 and "allowlist" in resp.text.lower():
-            console.print(
-                "\n   [bold red]❌ PROBLEMA: Clave API bloqueada por host[/bold red]\n"
-                "   El servidor de GitHub Codespaces no está autorizado en esta clave.\n\n"
-                "   [bold yellow]SOLUCIÓN — sigue estos pasos:[/bold yellow]\n"
-                "   1. Ve a [cyan]https://the-odds-api.com[/cyan] en tu navegador\n"
-                "   2. Crea una cuenta gratis (no necesitas tarjeta)\n"
-                "   3. Copia tu nueva API Key\n"
-                "   4. En la terminal del Codespace escribe:\n"
-                "      [bold]sed -i 's/ODDS_API_KEY=.*/ODDS_API_KEY=TU_NUEVA_CLAVE/' .env[/bold]\n"
-                "   5. Vuelve a correr: [bold]python main.py[/bold]"
-            )
-        elif resp.status_code == 401:
-            console.print(
-                "\n   [bold red]❌ PROBLEMA: Clave API inválida o expirada[/bold red]\n"
-                "   Obtén una nueva clave gratis en [cyan]https://the-odds-api.com[/cyan]"
-            )
+        elif resp.status_code == 403:
+            console.print("   [red]❌ Clave RapidAPI inválida o sin acceso a The Rundown[/red]")
+        elif resp.status_code == 429:
+            console.print("   [yellow]⚠️ Límite diario de 100 requests alcanzado. Intenta mañana.[/yellow]")
         else:
-            console.print(f"   [red]Respuesta inesperada ({resp.status_code}): {resp.text[:200]}[/red]")
+            console.print(f"   [red]Error {resp.status_code}: {resp.text[:150]}[/red]")
     except Exception as e:
         console.print(f"   [red]Error de conexión: {e}[/red]")
 
     console.print()
 
-    # 2. Probar fetch de eventos en distintos rangos
+    # 2. Eventos disponibles
     console.print("[bold]2. Eventos disponibles ahora[/bold]")
-    for min_o, max_o, hrs in [(1.40, 1.70, 24), (1.30, 2.00, 48), (1.0, 100.0, 72)]:
-        data = get_events_in_range(odds_key, "all", min_o, max_o, hours_ahead=hrs, max_results=500)
+    for min_o, max_o, hrs in [(1.40, 1.70, 24), (1.35, 1.80, 36), (1.30, 2.00, 72)]:
+        data = get_events_in_range(rapid_key, "all", min_o, max_o, hours_ahead=hrs, max_results=500)
         n = data.get("total_apuestas_encontradas", 0)
         deps = data.get("deportes_con_apuestas", 0)
-        console.print(f"   Cuotas {min_o}-{max_o} en próximas {hrs}h: [cyan]{n} apuestas[/cyan] en {deps} deportes")
+        cons = data.get("deportes_consultados", 0)
+        console.print(f"   Cuotas {min_o}-{max_o} en próximas {hrs}h: [cyan]{n} apuestas[/cyan] en {deps} deportes ({cons} consultados)")
         errores = data.get("errores") or []
-        if errores and "403" in str(errores[0]):
-            console.print("      [red]→ Error 403: clave bloqueada (ver punto 1)[/red]")
-            break
-        elif errores:
+        if errores:
             console.print(f"      [yellow]Errores: {errores[:2]}[/yellow]")
+        if n > 0:
+            break
 
     console.print()
 
