@@ -93,7 +93,7 @@ def _run_general_mode(top: int = 10):
     show_header()
     show_spinner_message(
         f"Buscando top {top} apuestas con cuotas 1.40-1.70 en múltiples deportes…\n"
-        "  [dim]Datos: The Odds API  |  IA activada solo en análisis de partido específico[/dim]"
+        "  [dim]Datos: The Rundown API (RapidAPI)  |  IA activada solo en análisis de partido específico[/dim]"
     )
     console.print()
 
