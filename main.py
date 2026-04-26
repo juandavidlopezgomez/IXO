@@ -104,6 +104,45 @@ def _run_general_mode():
         sys.exit(1)
 
 
+def _run_diagnose():
+    """Diagnostica el estado de las APIs."""
+    import requests
+    from apis.odds_api import BASE_URL, get_sports_list, get_events_in_range
+
+    odds_key = os.environ["ODDS_API_KEY"]
+    console.print("[bold cyan]━━━ DIAGNÓSTICO DE APIs ━━━[/bold cyan]\n")
+
+    # 1. The Odds API
+    console.print("[bold]1. The Odds API[/bold]")
+    try:
+        resp = requests.get(f"{BASE_URL}/sports", params={"apiKey": odds_key}, timeout=15)
+        console.print(f"   Status: {resp.status_code}")
+        console.print(f"   Quota usada: {resp.headers.get('x-requests-used', '?')}")
+        console.print(f"   Quota restante: {resp.headers.get('x-requests-remaining', '?')}")
+        if resp.status_code == 200:
+            sports = [s for s in resp.json() if s.get("active")]
+            console.print(f"   Deportes activos: {len(sports)}")
+            console.print(f"   Ejemplos: {[s['key'] for s in sports[:8]]}")
+        else:
+            console.print(f"   [red]Respuesta: {resp.text[:200]}[/red]")
+    except Exception as e:
+        console.print(f"   [red]Error: {e}[/red]")
+
+    console.print()
+
+    # 2. Probar fetch de eventos en distintos rangos
+    console.print("[bold]2. Eventos disponibles ahora[/bold]")
+    for min_o, max_o, hrs in [(1.40, 1.70, 24), (1.30, 2.00, 48), (1.0, 100.0, 72)]:
+        data = get_events_in_range(odds_key, "all", min_o, max_o, hours_ahead=hrs, max_results=500)
+        n = data.get("total_apuestas_encontradas", 0)
+        deps = data.get("deportes_con_apuestas", 0)
+        console.print(f"   Cuotas {min_o}-{max_o} en próximas {hrs}h: [cyan]{n} apuestas[/cyan] en {deps} deportes")
+        if data.get("errores"):
+            console.print(f"      [yellow]Errores: {data['errores'][:2]}[/yellow]")
+
+    console.print()
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="IXO — Agente de predicción de apuestas deportivas",
@@ -111,6 +150,7 @@ def main():
         epilog=(
             "Ejemplos:\n"
             "  python main.py\n"
+            "  python main.py --diagnose\n"
             '  python main.py "Real Madrid vs Barcelona"\n'
             '  python main.py "Lakers"\n'
             "  python main.py --chat"
@@ -127,12 +167,19 @@ def main():
         action="store_true",
         help="Modo interactivo: pregunta sobre varios partidos en una sesión",
     )
+    parser.add_argument(
+        "--diagnose", "-d",
+        action="store_true",
+        help="Diagnostica el estado de las APIs (cuota, eventos disponibles)",
+    )
     args = parser.parse_args()
 
     _check_env()
 
     try:
-        if args.chat:
+        if args.diagnose:
+            _run_diagnose()
+        elif args.chat:
             _run_chat_mode()
         elif args.query:
             _run_match_mode(args.query)

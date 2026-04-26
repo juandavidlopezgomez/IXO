@@ -277,27 +277,56 @@ def _run_loop(client: Groq, system_prompt: str, user_message: str, max_iteration
 def _select_top_bets(odds_key: str, n: int = 5, max_per_sport: int = 2) -> dict:
     """Selecciona las N mejores apuestas con datos REALES (sin IA, sin alucinaciones).
 
-    Estrategia:
-    - Solo eventos FUTUROS (filtrado en odds_api)
-    - Agrupa cuotas del mismo partido/mercado/selección entre bookmakers
-    - Score = prob_implícita_promedio + bonus por consenso de bookmakers
-    - Diversifica: máximo `max_per_sport` por deporte
+    Estrategia con expansión progresiva:
+    1) Intenta con cuotas 1.40-1.70 / 24h (rango ideal)
+    2) Si vacío: expande a 1.35-1.80 / 36h
+    3) Si vacío: expande a 1.30-2.00 / 72h
+    4) Si vacío: devuelve diagnóstico con info de la API
     """
-    data = get_events_in_range(
-        odds_key,
-        sport="all",
-        min_odds=1.40,
-        max_odds=1.70,
-        hours_ahead=24,
-        max_results=300,
-    )
-    events = data.get("apuestas", [])
+    intentos = [
+        (1.40, 1.70, 24, "Rango ideal: 1.40-1.70 en próximas 24h"),
+        (1.35, 1.80, 36, "Rango ampliado: 1.35-1.80 en próximas 36h"),
+        (1.30, 2.00, 72, "Rango amplio: 1.30-2.00 en próximas 72h"),
+    ]
+
+    data = None
+    rango_usado = ""
+
+    for min_o, max_o, hrs, label in intentos:
+        data = get_events_in_range(
+            odds_key,
+            sport="all",
+            min_odds=min_o,
+            max_odds=max_o,
+            hours_ahead=hrs,
+            max_results=300,
+        )
+        if data.get("apuestas"):
+            rango_usado = label
+            break
+
+    events = data.get("apuestas", []) if data else []
 
     if not events:
+        # Nada en absoluto — mostrar diagnóstico
+        diag_msg = (
+            f"⚠️ Sin apuestas disponibles incluso ampliando el rango.\n"
+            f"Diagnóstico:\n"
+            f"  • Deportes consultados: {data.get('deportes_consultados', 0)}\n"
+            f"  • Hora actual: {data.get('ahora_local', '')}\n"
+        )
+        if data and data.get("errores"):
+            diag_msg += f"  • Errores API: {data['errores'][:3]}\n"
+        diag_msg += (
+            "\nPosibles causas:\n"
+            "  • La cuota de The Odds API agotó su tope mensual (500 requests gratis)\n"
+            "  • No hay eventos programados en este momento\n"
+            "  • Conectividad con la API"
+        )
         return {
             "predicciones": [],
-            "resumen": "Sin partidos disponibles en cuotas 1.40-1.70 para las próximas 24h.",
-            "ahora_local": data.get("ahora_local", ""),
+            "resumen": diag_msg,
+            "ahora_local": data.get("ahora_local", "") if data else "",
         }
 
     # Agrupar entre bookmakers (mismo partido + mismo mercado + misma selección)
@@ -369,10 +398,11 @@ def _select_top_bets(odds_key: str, n: int = 5, max_per_sport: int = 2) -> dict:
     return {
         "predicciones": selected,
         "resumen": (
-            f"Top {len(selected)} apuestas del día — {deportes_unicos} deporte(s) diferentes. "
-            f"Hora actual: {data.get('ahora_local', '')}."
+            f"Top {len(selected)} apuestas — {deportes_unicos} deporte(s). "
+            f"{rango_usado}. Hora actual: {data.get('ahora_local', '')}."
         ),
         "ahora_local": data.get("ahora_local", ""),
+        "rango_usado": rango_usado,
     }
 
 
