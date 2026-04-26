@@ -185,7 +185,12 @@ def _run_debug_api():
             console.print(f"Num bookmakers en lines: {len(lines)}")
             if lines:
                 primera = list(lines.values())[0]
-                console.print(f"Estructura primer bookmaker:\n{json.dumps(primera, indent=2)[:800]}")
+                console.print(f"Primera entrada lines:\n{json.dumps(primera, indent=2)[:600]}")
+            lp = ev.get("line_periods", {})
+            console.print(f"Num bookmakers en line_periods: {len(lp)}")
+            if lp:
+                primera = list(lp.values())[0]
+                console.print(f"Primera entrada line_periods:\n{json.dumps(primera, indent=2)[:800]}")
     else:
         console.print(f"[red]Error: {r.text[:300]}[/red]")
 

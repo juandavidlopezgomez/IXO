@@ -307,25 +307,25 @@ def _select_top_bets(odds_key: str, n: int = 5, max_per_sport: int = 2) -> dict:
     events = data.get("apuestas", []) if data else []
 
     if not events:
-        # Detectar error 403 (clave bloqueada)
         errores = (data.get("errores") or []) if data else []
-        if errores and "403" in str(errores[0]):
-            tiene_429 = any("429" in str(e) or "límite" in str(e) for e in errores)
+        tiene_429 = any("429" in str(e) or "límite" in str(e) for e in errores)
+        if tiene_429:
             diag_msg = (
-                "❌ ERROR 429 — Límite de requests de The Rundown API (RapidAPI)\n\n"
+                "❌ ERROR 429 — Límite de requests de The Rundown API\n\n"
                 "SOLUCIÓN:\n"
                 "  1. Ve a https://rapidapi.com/therundown/api/therundown\n"
-                "  2. Inicia sesión y haz clic en 'Subscribe to Test'\n"
-                "  3. Elige el plan Basic (Free: 100 req/día gratis)\n"
-                "  4. Vuelve y corre: python main.py"
-            ) if tiene_429 else (
-                f"⚠️ Sin apuestas disponibles incluso ampliando el rango.\n"
-                f"  • Deportes consultados: {data.get('deportes_consultados', 0)}\n"
-                f"  • Hora actual: {data.get('ahora_local', '')}\n"
-                f"  • Errores: {errores[:3]}\n\n"
-                "Posibles causas:\n"
-                "  • No hay eventos programados en este momento\n"
-                "  • Suscríbete a The Rundown en https://rapidapi.com/therundown/api/therundown"
+                "  2. Haz clic en 'Subscribe to Test' → plan Basic (gratis)\n"
+                "  3. Corre: python main.py"
+            )
+        else:
+            cons = data.get('deportes_consultados', 0) if data else 0
+            hora = data.get('ahora_local', '') if data else ''
+            diag_msg = (
+                f"⚠️ Sin apuestas disponibles en el rango actual.\n"
+                f"  • Deportes consultados: {cons}\n"
+                f"  • Hora actual: {hora}\n"
+                + (f"  • Errores: {errores[:2]}\n" if errores else "")
+                + "\nPosible causa: no hay partidos programados en este momento."
             )
         return {
             "predicciones": [],

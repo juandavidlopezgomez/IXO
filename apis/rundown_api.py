@@ -91,8 +91,20 @@ def get_sports_list(api_key: str) -> list[dict]:
     return _sports_cache
 
 
+def _parse_period(period: dict) -> tuple[dict, dict]:
+    """Extrae (moneyline, total) de un periodo, manejando ambos formatos de API."""
+    ml = period.get("moneyline") or {}
+    total = period.get("total") or {}
+    # Algunos endpoints usan "totals" en vez de "total"
+    if not total:
+        total = period.get("totals") or {}
+    return ml, total
+
+
 def _extract_outcomes(event: dict, sport_name: str, min_odds: float, max_odds: float, now_utc: datetime) -> list[dict]:
-    """Extrae apuestas de un evento dentro del rango de cuotas."""
+    """Extrae apuestas de un evento dentro del rango de cuotas.
+    The Rundown API puede tener odds en 'lines' o en 'line_periods'.
+    """
     teams = event.get("teams_normalized") or event.get("teams", [])
     if not teams or len(teams) < 2:
         return []
@@ -104,19 +116,13 @@ def _extract_outcomes(event: dict, sport_name: str, min_odds: float, max_odds: f
 
     partido = f"{home} vs {away}"
     time_info = _format_match_time(event.get("event_date", ""), now_utc)
-
-    lines = event.get("lines", {})
     seen: set = set()
     results = []
 
-    for book_data in lines.values():
-        book_name = book_data.get("affiliate", {}).get("affiliate_name", "Casa")
-
-        # ── Moneyline (resultado final) ───────────────────────────────────────
-        ml = book_data.get("moneyline", {})
+    def _add_ml(ml: dict, name_home: str, name_away: str):
         for odds_key, seleccion in [
-            ("moneyline_home", home),
-            ("moneyline_away", away),
+            ("moneyline_home", name_home),
+            ("moneyline_away", name_away),
             ("moneyline_draw", "Empate"),
         ]:
             val = ml.get(odds_key)
@@ -126,39 +132,46 @@ def _extract_outcomes(event: dict, sport_name: str, min_odds: float, max_odds: f
                 if dk not in seen:
                     seen.add(dk)
                     results.append({
-                        "deporte": sport_name,
-                        "partido": partido,
-                        "cuando": time_info["cuando"],
-                        "comienza_en": time_info["comienza_en"],
+                        "deporte": sport_name, "partido": partido,
+                        "cuando": time_info["cuando"], "comienza_en": time_info["comienza_en"],
                         "minutos_hasta_inicio": time_info["minutos_hasta_inicio"],
-                        "mercado": "Resultado final",
-                        "seleccion": seleccion,
-                        "cuota": dec,
-                        "prob_implicita": round(1 / dec * 100, 1),
+                        "mercado": "Resultado final", "seleccion": seleccion,
+                        "cuota": dec, "prob_implicita": round(1 / dec * 100, 1),
                     })
 
-        # ── Total (over/under) ────────────────────────────────────────────────
-        total = book_data.get("total", {})
-        line_val = total.get("total_over", "")
+    def _add_total(total: dict):
+        line_val = total.get("total_over") or total.get("total_over_under") or ""
         for odds_key, label in [("total_over_money", "Más de"), ("total_under_money", "Menos de")]:
             val = total.get(odds_key)
             dec = _american_to_decimal(val)
             if dec and min_odds <= dec <= max_odds:
                 seleccion = f"{label} {line_val}"
-                dk = (partido, "Total puntos/goles", seleccion)
+                dk = (partido, "Total", seleccion)
                 if dk not in seen:
                     seen.add(dk)
                     results.append({
-                        "deporte": sport_name,
-                        "partido": partido,
-                        "cuando": time_info["cuando"],
-                        "comienza_en": time_info["comienza_en"],
+                        "deporte": sport_name, "partido": partido,
+                        "cuando": time_info["cuando"], "comienza_en": time_info["comienza_en"],
                         "minutos_hasta_inicio": time_info["minutos_hasta_inicio"],
-                        "mercado": "Total puntos/goles",
-                        "seleccion": seleccion,
-                        "cuota": dec,
-                        "prob_implicita": round(1 / dec * 100, 1),
+                        "mercado": "Total puntos/goles", "seleccion": seleccion,
+                        "cuota": dec, "prob_implicita": round(1 / dec * 100, 1),
                     })
+
+    # ── Formato 1: campo "lines" (bookmaker_id → {moneyline, total}) ─────────
+    for book_data in event.get("lines", {}).values():
+        ml, total = book_data.get("moneyline", {}), book_data.get("total", {})
+        _add_ml(ml, home, away)
+        _add_total(total)
+
+    # ── Formato 2: campo "line_periods" (bookmaker_id → {period_full_game}) ──
+    for book_data in event.get("line_periods", {}).values():
+        period = book_data.get("period_full_game") or book_data.get("1") or {}
+        if not period:
+            # Algunos tienen el periodo directamente como valor
+            period = book_data
+        ml, total = _parse_period(period)
+        _add_ml(ml, home, away)
+        _add_total(total)
 
     return results
 
