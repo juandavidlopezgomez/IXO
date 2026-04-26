@@ -423,17 +423,17 @@ def _select_top_bets(odds_key: str, n: int = 5, max_per_sport: int = 2) -> dict:
 _fallback_top_bets = _select_top_bets
 
 
-def run_general(n: int = 5) -> dict:
+def run_general(n: int = 10) -> dict:
     """Análisis general: encuentra las N mejores apuestas REALES del día.
 
-    Usa lógica determinística con datos reales de la API — sin IA para
+    Usa lógica determinística con datos reales de the Odds API — sin IA para
     evitar alucinaciones. Resultado garantizado y verificable.
     """
     _team_stats_cache.clear()
     _h2h_cache.clear()
 
     odds_key = os.environ["ODDS_API_KEY"]
-    return _select_top_bets(odds_key, n=n, max_per_sport=2)
+    return _select_top_bets(odds_key, n=n, max_per_sport=3)
 
 
 def run_match(query: str) -> dict:

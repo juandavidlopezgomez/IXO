@@ -86,18 +86,19 @@ def _run_match_mode(query: str):
         sys.exit(1)
 
 
-def _run_general_mode():
+def _run_general_mode(top: int = 10):
     from display import show_header, show_predictions, show_error, show_spinner_message
     import agent
 
     show_header()
     show_spinner_message(
-        "Analizando apuestas con cuotas 1.40-1.70 en próximas 36 horas…"
+        f"Buscando top {top} apuestas con cuotas 1.40-1.70 en múltiples deportes…\n"
+        "  [dim]Datos: The Odds API  |  IA activada solo en análisis de partido específico[/dim]"
     )
     console.print()
 
     try:
-        result = agent.run_general()
+        result = agent.run_general(n=top)
         show_predictions(result)
     except Exception as e:
         show_error(str(e))
@@ -193,6 +194,12 @@ def main():
         action="store_true",
         help="Diagnostica el estado de las APIs (cuota, eventos disponibles)",
     )
+    parser.add_argument(
+        "--top", "-n",
+        type=int,
+        default=10,
+        help="Número de apuestas a mostrar (por defecto: 10)",
+    )
     args = parser.parse_args()
 
     _check_env()
@@ -205,7 +212,7 @@ def main():
         elif args.query:
             _run_match_mode(args.query)
         else:
-            _run_general_mode()
+            _run_general_mode(top=args.top)
     except KeyboardInterrupt:
         console.print("\n[yellow]Cancelado por el usuario.[/yellow]")
         sys.exit(0)
