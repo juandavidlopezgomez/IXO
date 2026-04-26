@@ -208,6 +208,46 @@ def get_events_in_range(
     }
 
 
+TEAM_ALIASES = {
+    "psg": ["paris saint-germain", "paris saint germain", "paris sg"],
+    "bayern": ["bayern munich", "bayern münchen", "fc bayern"],
+    "bayer munich": ["bayern munich"],
+    "munich": ["bayern munich"],
+    "real": ["real madrid"],
+    "barca": ["barcelona", "fc barcelona"],
+    "barça": ["barcelona", "fc barcelona"],
+    "atletico": ["atletico madrid", "atlético madrid"],
+    "city": ["manchester city"],
+    "united": ["manchester united"],
+    "liverpool": ["liverpool fc"],
+    "juve": ["juventus"],
+    "inter": ["inter milan", "internazionale"],
+    "milan": ["ac milan", "milan"],
+    "dortmund": ["borussia dortmund"],
+    "leipzig": ["rb leipzig"],
+}
+
+
+def _expand_query(query: str) -> list[str]:
+    """Genera variaciones del query para mejorar búsqueda."""
+    q = query.lower().strip()
+    variants = [q]
+    for token in q.replace(" vs ", " ").replace("-", " ").split():
+        if token in TEAM_ALIASES:
+            variants.extend(TEAM_ALIASES[token])
+    if q in TEAM_ALIASES:
+        variants.extend(TEAM_ALIASES[q])
+    # también partes del query (ej: "psg vs bayern" → "psg" y "bayern")
+    if " vs " in q:
+        parts = q.split(" vs ")
+        for p in parts:
+            p = p.strip()
+            variants.append(p)
+            if p in TEAM_ALIASES:
+                variants.extend(TEAM_ALIASES[p])
+    return list(set(variants))
+
+
 def find_match(
     api_key: str,
     query: str,
@@ -216,7 +256,7 @@ def find_match(
     """Busca un partido específico por nombre de equipo."""
     now_utc = datetime.now(timezone.utc)
     cutoff = now_utc + timedelta(hours=hours_ahead)
-    query_lower = query.lower()
+    query_variants = _expand_query(query)
 
     try:
         all_sports = get_sports_list(api_key)
@@ -250,8 +290,15 @@ def find_match(
 
                 home = event["home_team"].lower()
                 away = event["away_team"].lower()
+                full = f"{home} {away}"
 
-                if query_lower in home or query_lower in away or query_lower in f"{home} {away}":
+                # Match si CUALQUIER variante coincide en home o away
+                matches = any(
+                    v in home or v in away or v in full
+                    for v in query_variants
+                )
+
+                if matches:
                     time_info = _format_match_time(event["commence_time"], now_utc)
                     all_outcomes = []
                     for bm in event.get("bookmakers", [])[:3]:

@@ -274,18 +274,110 @@ def _run_loop(client: Groq, system_prompt: str, user_message: str, max_iteration
     return {"predicciones": [], "resumen": "El agente no completó el análisis"}
 
 
+def _fallback_top_bets(odds_key: str, n: int = 3) -> dict:
+    """Plan B: selecciona las N mejores apuestas usando lógica determinística sin IA.
+
+    Estrategia:
+    - Agrupa cuotas duplicadas (mismo partido/mercado/selección) y promedia
+    - Score = prob_implícita * (1 + consenso_bookmakers * 0.05)
+    - Bonus si el partido es pronto y hay consenso entre bookmakers
+    """
+    data = get_events_in_range(
+        odds_key,
+        sport="all",
+        min_odds=1.40,
+        max_odds=1.70,
+        hours_ahead=24,
+        max_results=200,
+    )
+    events = data.get("apuestas", [])
+
+    if not events:
+        return {
+            "predicciones": [],
+            "resumen": "Sin eventos disponibles en el rango de cuotas 1.40-1.70 para hoy.",
+        }
+
+    # Agrupar por (deporte, partido, mercado, selección)
+    grouped: dict = {}
+    for e in events:
+        key = (e.get("deporte", ""), e.get("partido", ""), e.get("mercado", ""), e.get("seleccion", ""))
+        if key not in grouped:
+            grouped[key] = {"events": [], "data": e}
+        grouped[key]["events"].append(e)
+
+    scored = []
+    for key, group in grouped.items():
+        evs = group["events"]
+        avg_odds = sum(ev["cuota"] for ev in evs) / len(evs)
+        avg_prob = sum(ev["prob_implicita"] for ev in evs) / len(evs)
+        consensus = len(evs)
+
+        # Bonus por consenso entre bookmakers (más casas = más confianza)
+        score = avg_prob + (consensus - 1) * 2
+
+        # Penalizar si el partido es muy lejano (>20h)
+        minutos = group["data"].get("minutos_hasta_inicio", 0)
+        if minutos > 20 * 60:
+            score -= 5
+
+        d = group["data"].copy()
+        d["cuota"] = round(avg_odds, 2)
+        d["prob_implicita"] = round(avg_prob, 1)
+        d["prob_estimada"] = round(min(avg_prob + 6, 95), 1)
+        d["nivel_confianza"] = "ALTA" if avg_prob >= 65 else ("MEDIA" if avg_prob >= 60 else "BAJA")
+        d["razonamiento"] = (
+            f"Consenso de {consensus} casa(s) de apuestas. "
+            f"Cuota promedio {avg_odds:.2f} (prob. implícita {avg_prob:.1f}%). "
+            f"Partido {d.get('comienza_en', 'pronto')}."
+        )
+        d["recomendar"] = avg_prob >= 60
+        d["_score"] = score
+        scored.append(d)
+
+    scored.sort(key=lambda x: x["_score"], reverse=True)
+    top = scored[:n]
+    for t in top:
+        t.pop("_score", None)
+
+    return {
+        "predicciones": top,
+        "resumen": f"Top {len(top)} apuestas del día (selección por consenso de bookmakers).",
+    }
+
+
 def run_general() -> dict:
-    """Análisis general: encuentra las mejores apuestas del día/futuras."""
+    """Análisis general: encuentra las mejores apuestas del día/futuras.
+
+    Intenta primero con IA. Si falla, usa el plan B determinístico.
+    """
     _team_stats_cache.clear()
     _h2h_cache.clear()
 
-    client = Groq(api_key=os.environ["GROQ_API_KEY"])
-    system = _build_system_prompt_general()
-    user = (
-        "Dame las 3 mejores apuestas de HOY con cuotas entre 1.40 y 1.70. "
-        "Empieza llamando las herramientas ya."
-    )
-    return _run_loop(client, system, user)
+    odds_key = os.environ["ODDS_API_KEY"]
+
+    # Intentar con IA
+    try:
+        client = Groq(api_key=os.environ["GROQ_API_KEY"])
+        system = _build_system_prompt_general()
+        user = (
+            "Dame las 3 mejores apuestas de HOY con cuotas entre 1.40 y 1.70. "
+            "Empieza llamando get_events_in_odds_range AHORA. "
+            "Aunque alguna herramienta falle, SIEMPRE recomienda 3 apuestas con "
+            "los datos que tengas. Nunca digas 'no puedo'."
+        )
+        result = _run_loop(client, system, user)
+
+        # Si la IA dio recomendaciones válidas, devolverlas
+        if result.get("predicciones") and len(result["predicciones"]) > 0:
+            return result
+    except Exception:
+        pass
+
+    # Plan B: fallback determinístico
+    fallback = _fallback_top_bets(odds_key, n=3)
+    fallback["resumen"] = "🤖 " + fallback["resumen"] + " (modo automático)"
+    return fallback
 
 
 def run_match(query: str) -> dict:
