@@ -274,13 +274,14 @@ def _run_loop(client: Groq, system_prompt: str, user_message: str, max_iteration
     return {"predicciones": [], "resumen": "El agente no completó el análisis"}
 
 
-def _fallback_top_bets(odds_key: str, n: int = 3) -> dict:
-    """Plan B: selecciona las N mejores apuestas usando lógica determinística sin IA.
+def _select_top_bets(odds_key: str, n: int = 5, max_per_sport: int = 2) -> dict:
+    """Selecciona las N mejores apuestas con datos REALES (sin IA, sin alucinaciones).
 
     Estrategia:
-    - Agrupa cuotas duplicadas (mismo partido/mercado/selección) y promedia
-    - Score = prob_implícita * (1 + consenso_bookmakers * 0.05)
-    - Bonus si el partido es pronto y hay consenso entre bookmakers
+    - Solo eventos FUTUROS (filtrado en odds_api)
+    - Agrupa cuotas del mismo partido/mercado/selección entre bookmakers
+    - Score = prob_implícita_promedio + bonus por consenso de bookmakers
+    - Diversifica: máximo `max_per_sport` por deporte
     """
     data = get_events_in_range(
         odds_key,
@@ -288,96 +289,108 @@ def _fallback_top_bets(odds_key: str, n: int = 3) -> dict:
         min_odds=1.40,
         max_odds=1.70,
         hours_ahead=24,
-        max_results=200,
+        max_results=300,
     )
     events = data.get("apuestas", [])
 
     if not events:
         return {
             "predicciones": [],
-            "resumen": "Sin eventos disponibles en el rango de cuotas 1.40-1.70 para hoy.",
+            "resumen": "Sin partidos disponibles en cuotas 1.40-1.70 para las próximas 24h.",
+            "ahora_local": data.get("ahora_local", ""),
         }
 
-    # Agrupar por (deporte, partido, mercado, selección)
+    # Agrupar entre bookmakers (mismo partido + mismo mercado + misma selección)
     grouped: dict = {}
     for e in events:
-        key = (e.get("deporte", ""), e.get("partido", ""), e.get("mercado", ""), e.get("seleccion", ""))
-        if key not in grouped:
-            grouped[key] = {"events": [], "data": e}
-        grouped[key]["events"].append(e)
+        key = (e.get("partido", ""), e.get("mercado", ""), e.get("seleccion", ""))
+        grouped.setdefault(key, []).append(e)
 
     scored = []
-    for key, group in grouped.items():
-        evs = group["events"]
+    for key, evs in grouped.items():
         avg_odds = sum(ev["cuota"] for ev in evs) / len(evs)
         avg_prob = sum(ev["prob_implicita"] for ev in evs) / len(evs)
         consensus = len(evs)
 
-        # Bonus por consenso entre bookmakers (más casas = más confianza)
-        score = avg_prob + (consensus - 1) * 2
+        # Score base: probabilidad implícita
+        score = avg_prob
 
-        # Penalizar si el partido es muy lejano (>20h)
-        minutos = group["data"].get("minutos_hasta_inicio", 0)
-        if minutos > 20 * 60:
-            score -= 5
+        # Bonus por consenso (más casas que ofrecen la misma cuota = más confianza)
+        score += min(consensus, 5) * 1.5
 
-        d = group["data"].copy()
+        # Bonus por partido cercano (en próximas 8h)
+        minutos = evs[0].get("minutos_hasta_inicio", 9999)
+        if 0 < minutos <= 480:
+            score += 3
+        elif minutos > 1200:
+            score -= 4
+
+        d = evs[0].copy()
         d["cuota"] = round(avg_odds, 2)
         d["prob_implicita"] = round(avg_prob, 1)
-        d["prob_estimada"] = round(min(avg_prob + 6, 95), 1)
+        d["prob_estimada"] = round(min(avg_prob + 5, 95), 1)
         d["nivel_confianza"] = "ALTA" if avg_prob >= 65 else ("MEDIA" if avg_prob >= 60 else "BAJA")
         d["razonamiento"] = (
-            f"Consenso de {consensus} casa(s) de apuestas. "
-            f"Cuota promedio {avg_odds:.2f} (prob. implícita {avg_prob:.1f}%). "
-            f"Partido {d.get('comienza_en', 'pronto')}."
+            f"{consensus} casa(s) coinciden con cuota ~{avg_odds:.2f} "
+            f"(prob. implícita {avg_prob:.1f}%). Partido {d.get('comienza_en', 'pronto')}."
         )
-        d["recomendar"] = avg_prob >= 60
-        d["_score"] = score
+        d["recomendar"] = avg_prob >= 58 and consensus >= 1
+        d["_score"] = round(score, 2)
         scored.append(d)
 
     scored.sort(key=lambda x: x["_score"], reverse=True)
-    top = scored[:n]
-    for t in top:
-        t.pop("_score", None)
+
+    # Diversificar por deporte: máx N por deporte
+    selected = []
+    sport_count: dict = {}
+    for s in scored:
+        sport = s.get("deporte", "?")
+        if sport_count.get(sport, 0) >= max_per_sport:
+            continue
+        selected.append(s)
+        sport_count[sport] = sport_count.get(sport, 0) + 1
+        if len(selected) >= n:
+            break
+
+    # Si quedó corto, completar con los mejores sin importar deporte
+    if len(selected) < n:
+        ya_seleccionados = {(s["partido"], s["mercado"], s["seleccion"]) for s in selected}
+        for s in scored:
+            if (s["partido"], s["mercado"], s["seleccion"]) not in ya_seleccionados:
+                selected.append(s)
+                if len(selected) >= n:
+                    break
+
+    for s in selected:
+        s.pop("_score", None)
+
+    deportes_unicos = len(set(s.get("deporte", "") for s in selected))
 
     return {
-        "predicciones": top,
-        "resumen": f"Top {len(top)} apuestas del día (selección por consenso de bookmakers).",
+        "predicciones": selected,
+        "resumen": (
+            f"Top {len(selected)} apuestas del día — {deportes_unicos} deporte(s) diferentes. "
+            f"Hora actual: {data.get('ahora_local', '')}."
+        ),
+        "ahora_local": data.get("ahora_local", ""),
     }
 
 
-def run_general() -> dict:
-    """Análisis general: encuentra las mejores apuestas del día/futuras.
+# Alias para compatibilidad
+_fallback_top_bets = _select_top_bets
 
-    Intenta primero con IA. Si falla, usa el plan B determinístico.
+
+def run_general(n: int = 5) -> dict:
+    """Análisis general: encuentra las N mejores apuestas REALES del día.
+
+    Usa lógica determinística con datos reales de la API — sin IA para
+    evitar alucinaciones. Resultado garantizado y verificable.
     """
     _team_stats_cache.clear()
     _h2h_cache.clear()
 
     odds_key = os.environ["ODDS_API_KEY"]
-
-    # Intentar con IA
-    try:
-        client = Groq(api_key=os.environ["GROQ_API_KEY"])
-        system = _build_system_prompt_general()
-        user = (
-            "Dame las 3 mejores apuestas de HOY con cuotas entre 1.40 y 1.70. "
-            "Empieza llamando get_events_in_odds_range AHORA. "
-            "Aunque alguna herramienta falle, SIEMPRE recomienda 3 apuestas con "
-            "los datos que tengas. Nunca digas 'no puedo'."
-        )
-        result = _run_loop(client, system, user)
-
-        # Si la IA dio recomendaciones válidas, devolverlas
-        if result.get("predicciones") and len(result["predicciones"]) > 0:
-            return result
-    except Exception:
-        pass
-
-    # Plan B: fallback determinístico
-    fallback = _fallback_top_bets(odds_key, n=3)
-    fallback["resumen"] = "🤖 " + fallback["resumen"] + " (modo automático)"
-    return fallback
+    return _select_top_bets(odds_key, n=n, max_per_sport=2)
 
 
 def run_match(query: str) -> dict:
