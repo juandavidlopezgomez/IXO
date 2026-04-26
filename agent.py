@@ -308,21 +308,34 @@ def _select_top_bets(odds_key: str, n: int = 5, max_per_sport: int = 2) -> dict:
     events = data.get("apuestas", []) if data else []
 
     if not events:
-        # Nada en absoluto — mostrar diagnóstico
-        diag_msg = (
-            f"⚠️ Sin apuestas disponibles incluso ampliando el rango.\n"
-            f"Diagnóstico:\n"
-            f"  • Deportes consultados: {data.get('deportes_consultados', 0)}\n"
-            f"  • Hora actual: {data.get('ahora_local', '')}\n"
-        )
-        if data and data.get("errores"):
-            diag_msg += f"  • Errores API: {data['errores'][:3]}\n"
-        diag_msg += (
-            "\nPosibles causas:\n"
-            "  • La cuota de The Odds API agotó su tope mensual (500 requests gratis)\n"
-            "  • No hay eventos programados en este momento\n"
-            "  • Conectividad con la API"
-        )
+        # Detectar error 403 (clave bloqueada)
+        errores = (data.get("errores") or []) if data else []
+        if errores and "403" in str(errores[0]):
+            diag_msg = (
+                "❌ CLAVE API BLOQUEADA (Error 403 — Host not in allowlist)\n\n"
+                "La clave de The Odds API no permite conexiones desde GitHub Codespaces.\n\n"
+                "SOLUCIÓN:\n"
+                "  1. Ve a https://the-odds-api.com y crea cuenta gratis\n"
+                "  2. Copia tu nueva API Key\n"
+                "  3. En la terminal escribe:\n"
+                "     sed -i 's/ODDS_API_KEY=.*/ODDS_API_KEY=TU_NUEVA_CLAVE/' .env\n"
+                "  4. Corre: python main.py"
+            )
+        else:
+            diag_msg = (
+                f"⚠️ Sin apuestas disponibles incluso ampliando el rango.\n"
+                f"Diagnóstico:\n"
+                f"  • Deportes consultados: {data.get('deportes_consultados', 0)}\n"
+                f"  • Hora actual: {data.get('ahora_local', '')}\n"
+            )
+            if errores:
+                diag_msg += f"  • Errores API: {errores[:3]}\n"
+            diag_msg += (
+                "\nPosibles causas:\n"
+                "  • La cuota de The Odds API agotó su tope mensual (500 requests gratis)\n"
+                "  • No hay eventos programados en este momento\n"
+                "  • Conectividad con la API"
+            )
         return {
             "predicciones": [],
             "resumen": diag_msg,

@@ -122,11 +122,28 @@ def _run_diagnose():
         if resp.status_code == 200:
             sports = [s for s in resp.json() if s.get("active")]
             console.print(f"   Deportes activos: {len(sports)}")
-            console.print(f"   Ejemplos: {[s['key'] for s in sports[:8]]}")
+            console.print(f"   [green]✅ API funcionando correctamente[/green]")
+        elif resp.status_code == 403 and "allowlist" in resp.text.lower():
+            console.print(
+                "\n   [bold red]❌ PROBLEMA: Clave API bloqueada por host[/bold red]\n"
+                "   El servidor de GitHub Codespaces no está autorizado en esta clave.\n\n"
+                "   [bold yellow]SOLUCIÓN — sigue estos pasos:[/bold yellow]\n"
+                "   1. Ve a [cyan]https://the-odds-api.com[/cyan] en tu navegador\n"
+                "   2. Crea una cuenta gratis (no necesitas tarjeta)\n"
+                "   3. Copia tu nueva API Key\n"
+                "   4. En la terminal del Codespace escribe:\n"
+                "      [bold]sed -i 's/ODDS_API_KEY=.*/ODDS_API_KEY=TU_NUEVA_CLAVE/' .env[/bold]\n"
+                "   5. Vuelve a correr: [bold]python main.py[/bold]"
+            )
+        elif resp.status_code == 401:
+            console.print(
+                "\n   [bold red]❌ PROBLEMA: Clave API inválida o expirada[/bold red]\n"
+                "   Obtén una nueva clave gratis en [cyan]https://the-odds-api.com[/cyan]"
+            )
         else:
-            console.print(f"   [red]Respuesta: {resp.text[:200]}[/red]")
+            console.print(f"   [red]Respuesta inesperada ({resp.status_code}): {resp.text[:200]}[/red]")
     except Exception as e:
-        console.print(f"   [red]Error: {e}[/red]")
+        console.print(f"   [red]Error de conexión: {e}[/red]")
 
     console.print()
 
@@ -137,8 +154,12 @@ def _run_diagnose():
         n = data.get("total_apuestas_encontradas", 0)
         deps = data.get("deportes_con_apuestas", 0)
         console.print(f"   Cuotas {min_o}-{max_o} en próximas {hrs}h: [cyan]{n} apuestas[/cyan] en {deps} deportes")
-        if data.get("errores"):
-            console.print(f"      [yellow]Errores: {data['errores'][:2]}[/yellow]")
+        errores = data.get("errores") or []
+        if errores and "403" in str(errores[0]):
+            console.print("      [red]→ Error 403: clave bloqueada (ver punto 1)[/red]")
+            break
+        elif errores:
+            console.print(f"      [yellow]Errores: {errores[:2]}[/yellow]")
 
     console.print()
 
