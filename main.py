@@ -154,6 +154,42 @@ def _run_diagnose():
     console.print()
 
 
+def _run_debug_api():
+    """Muestra estructura RAW de la API para diagnóstico."""
+    import requests, json
+    key = os.environ["RAPIDAPI_KEY"]
+    headers = {
+        "x-rapidapi-host": "therundown-therundown-v1.p.rapidapi.com",
+        "x-rapidapi-key": key,
+    }
+    from datetime import datetime, timezone
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    console.print(f"[bold cyan]━━━ DEBUG API RAW (NBA sport_id=3, fecha {today}) ━━━[/bold cyan]\n")
+    r = requests.get(
+        f"https://therundown-therundown-v1.p.rapidapi.com/sports/3/events/{today}",
+        headers=headers,
+        params={"include": "all_periods"},
+        timeout=15,
+    )
+    console.print(f"Status: {r.status_code}")
+    if r.status_code == 200:
+        data = r.json()
+        events = data.get("events", [])
+        console.print(f"Eventos encontrados: {len(events)}")
+        if events:
+            ev = events[0]
+            console.print(f"Claves del evento: {list(ev.keys())}")
+            console.print(f"Teams: {ev.get('teams') or ev.get('teams_normalized')}")
+            lines = ev.get("lines", {})
+            console.print(f"Num bookmakers en lines: {len(lines)}")
+            if lines:
+                primera = list(lines.values())[0]
+                console.print(f"Estructura primer bookmaker:\n{json.dumps(primera, indent=2)[:800]}")
+    else:
+        console.print(f"[red]Error: {r.text[:300]}[/red]")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="IXO — Agente de predicción de apuestas deportivas",
@@ -189,12 +225,19 @@ def main():
         default=10,
         help="Número de apuestas a mostrar (por defecto: 10)",
     )
+    parser.add_argument(
+        "--debug-api",
+        action="store_true",
+        help="Muestra estructura RAW de la API para diagnóstico",
+    )
     args = parser.parse_args()
 
     _check_env()
 
     try:
-        if args.diagnose:
+        if args.debug_api:
+            _run_debug_api()
+        elif args.diagnose:
             _run_diagnose()
         elif args.chat:
             _run_chat_mode()
