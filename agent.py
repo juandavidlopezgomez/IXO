@@ -26,22 +26,20 @@ def _now_context() -> str:
 
 
 def _build_system_prompt_general() -> str:
-    return f"""Eres analista experto en apuestas deportivas. Encuentra las MEJORES apuestas con cuotas 1.40-1.70.
+    return f"""Eres analista experto en apuestas deportivas. Tu tarea: encontrar las 3 MEJORES apuestas de hoy con cuotas 1.40-1.70.
 
 {_now_context()}
 
-PROCESO:
-1. Llama get_events_in_odds_range(sport="all", hours_ahead=36)
-2. Para los mejores partidos de fútbol (máx 3), llama get_team_statistics en ambos equipos
-3. Para los 2 mejores, llama get_head_to_head
-4. Responde con JSON final
+PROCESO (sigue este orden exacto):
+1. Llama get_events_in_odds_range(sport="all", hours_ahead=24)
+2. Elige los 3 partidos más prometedores y llama get_team_statistics para cada equipo favorito
+3. Llama get_head_to_head en esos 3 partidos
+4. Selecciona las 3 mejores y responde con JSON
 
-PUNTUACIÓN (0-100): Forma reciente 5 partidos=40pts, diferencia goles=25pts, H2H=20pts, local=15pts
-RECOMENDAR solo si: prob_estimada >= (1/cuota×100) + 5%
-Sé honesto: 0 recomendaciones es mejor que recomendar algo dudoso.
+CRITERIO: Solo recomienda si prob_estimada >= (1/cuota×100) + 5%.
+Si no hay 3 que cumplan, pon las mejores que tengas aunque sean 1 o 2.
 
-═══════ RESPUESTA FINAL (OBLIGATORIO JSON) ═══════
-Termina SIEMPRE con este bloque (sin texto después del cierre):
+RESPUESTA — termina SIEMPRE con este JSON exacto:
 ```json
 {{
   "predicciones": [
@@ -55,18 +53,14 @@ Termina SIEMPRE con este bloque (sin texto después del cierre):
       "prob_implicita": 65.8,
       "prob_estimada": 74.0,
       "nivel_confianza": "ALTA",
-      "razonamiento": "Arsenal: 4V-1E últimos 5, +1.4 goles diferencia, gana 75% en casa, H2H 6-2 favor.",
+      "razonamiento": "4V-1E últimos 5 partidos, gana 75% en casa, H2H 6-2.",
       "recomendar": true
     }}
   ],
-  "total_analizadas": 20,
-  "total_recomendadas": 4,
-  "resumen": "4 apuestas recomendadas de 20 analizadas"
+  "resumen": "Top 3 apuestas del día"
 }}
 ```
-
-nivel_confianza: "ALTA" si prob_estimada ≥ 75%, "MEDIA" si ≥ 70%, "BAJA" si ≥ 65%.
-Si nada cumple el criterio, devuelve predicciones=[] con explicación en resumen."""
+nivel_confianza: "ALTA"≥75%, "MEDIA"≥70%, "BAJA"≥65%."""
 
 
 def _build_system_prompt_match(query: str) -> str:
@@ -288,9 +282,8 @@ def run_general() -> dict:
     client = Groq(api_key=os.environ["GROQ_API_KEY"])
     system = _build_system_prompt_general()
     user = (
-        "Analiza TODOS los deportes con apuestas en cuotas 1.40-1.70 que comiencen "
-        "en las próximas 36 horas. Usa todas las herramientas necesarias y dame "
-        "tus mejores predicciones del día con alto porcentaje de acierto."
+        "Dame las 3 mejores apuestas de HOY con cuotas entre 1.40 y 1.70. "
+        "Empieza llamando las herramientas ya."
     )
     return _run_loop(client, system, user)
 
