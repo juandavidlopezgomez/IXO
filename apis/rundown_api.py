@@ -225,8 +225,8 @@ def get_events_in_range(
 
                 for ev in events:
                     ti = _format_match_time(ev.get("event_date", ""), now_utc)
-                    if only_future and ti["minutos_hasta_inicio"] < 0:
-                        continue
+                    if only_future and ti["minutos_hasta_inicio"] <= 0:
+                        continue  # excluir partidos ya iniciados o terminados
                     if ti["minutos_hasta_inicio"] > hours_ahead * 60:
                         continue
                     outcomes = _extract_outcomes(ev, sport_name, min_odds, max_odds, now_utc)
@@ -312,7 +312,7 @@ def find_match(api_key: str, query: str, hours_ahead: int = 72) -> dict:
 
                 for ev in resp.json().get("events", []):
                     ti = _format_match_time(ev.get("event_date", ""), now_utc)
-                    if ti["minutos_hasta_inicio"] < -60:
+                    if ti["minutos_hasta_inicio"] <= 0:
                         continue
 
                     teams = ev.get("teams_normalized") or ev.get("teams", [])

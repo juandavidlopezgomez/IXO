@@ -283,9 +283,10 @@ def _select_top_bets(odds_key: str, n: int = 5, max_per_sport: int = 2) -> dict:
     4) Si vacío: devuelve diagnóstico con info de la API
     """
     intentos = [
-        (1.40, 1.70, 24, "Rango ideal: 1.40-1.70 en próximas 24h"),
-        (1.35, 1.80, 36, "Rango ampliado: 1.35-1.80 en próximas 36h"),
-        (1.30, 2.00, 72, "Rango amplio: 1.30-2.00 en próximas 72h"),
+        (1.40, 1.70, 36,  "Cuotas 1.40-1.70 en próximas 36h"),
+        (1.35, 1.85, 48,  "Cuotas 1.35-1.85 en próximas 48h"),
+        (1.30, 2.00, 72,  "Cuotas 1.30-2.00 en próximas 72h"),
+        (1.20, 2.50, 120, "Cuotas 1.20-2.50 en próximas 5 días"),
     ]
 
     data = None
